@@ -10,17 +10,18 @@ editor_options:
   chunk_output_type: console
 ---
 
+# The g-formula
+
+# The data
+
+The file `data.csv` was created using the SAS code from the Supplementary Material, and it corresponds to the person-period dataset mentioned in the manuscript.
+
 ```{r load-data}
 # Data taken from the SM of the manuscript
-dd <- readr::read_delim(
-  "keil2014/data.txt",
-  col_names = c(
-    "ID", "time",
-    "t_rel", "d_dea", "t_gvhd", "d_gvhd",
-    "d_rel", "t_pla", "d_pla",
-    "age", "male", "cmv",
-    "waitdays", "all"
-  ),
-  show_col_types = FALSE
-)
+dd <- read.csv(
+  file = "keil2014/data.csv"
+) |>
+  tibble::as_tibble()
 ```
+
+# The parametric g-formula
