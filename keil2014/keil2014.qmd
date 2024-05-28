@@ -10,6 +10,10 @@ editor_options:
   chunk_output_type: console
 ---
 
+```{r}
+set.seed(1234)
+```
+
 # The g-formula
 
 # The data

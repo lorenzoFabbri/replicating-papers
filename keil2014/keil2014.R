@@ -72,6 +72,12 @@ keil2014 <- function(dat, idxs, mc_sample_size = 137000, type_intervention) {
   }) # End loop over pseudo-subjects
   
   # Step 3: Estimate effect measure
+  mod_survival <- survival::coxph(
+    formula = survival::Surv(td * d) ~ gvhd,
+    data = res
+  )
+  
+  return(mod_survival)
 }
 ################################################################################
 
@@ -80,7 +86,7 @@ simulate <- function(info, covariates, mods, type_intervention) {
   
   # Simulate future from baseline covariates
   for (t in 1:1825) {
-    # Cubic splines for time t
+    # Splines for time t
     info[t, "daysq"] <- t**2
     info[t, "daycu"] <- t**3
     info[t, "daycurs1"] <- splines_t1(t)
@@ -88,80 +94,44 @@ simulate <- function(info, covariates, mods, type_intervention) {
     
     # Set baseline and time-varying covariates
     if (t == 1) {
-      info_0 <- info[t, ] |>
-        dplyr::mutate(dplyr::across(dplyr::all_of(covariates), ~ 0))
-      
-      info[t, "platnorm"] <- as.integer(rbinom(
-        n = 1,
-        size = 1,
-        prob = predict(mods$modA, newdata = info_0, type = "response")
-      ))
-      info_0$platnorm <- info[t, ]$platnorm
-      info[t, "relapse"] <- as.integer(rbinom(
-        n = 1,
-        size = 1,
-        prob = predict(mods$modB, newdata = info_0, type = "response")
-      ))
-      info_0$relapse <- info[t, ]$relapse
-      
-      if (type_intervention == "natural_course") {
-        info[t, "gvhd"] <- as.integer(rbinom(
-          n = 1,
-          size = 1,
-          prob = predict(mods$modH, newdata = info_0, type = "response")
-        ))
-        info_0$gvhd <- info[t, ]$gvhd
-      } else if (type_intervention == "always") {
-        # TODO
-      } else if (type_intervention == "never") {
-        # TODO
-      }
-      
-      info[t, "censlost"] <- as.integer(rbinom(
-        n = 1,
-        size = 1,
-        prob = predict(mods$modD, newdata = info_0, type = "response")
-      ))
-      info_0$censlost <- info[t, ]$censlost
-      info[t, "d"] <- as.integer(rbinom(
-        n = 1,
-        size = 1,
-        prob = predict(mods$modE, newdata = info_0, type = "response")
-      ))
+      info <- info |>
+        dplyr::mutate(dplyr::across(dplyr::all_of(covariates), ~ 0L))
       ##########################################################################
     } else {
-      if (info[t, "relapse"] == 0) {
-        info[t, "daysnorelapse"] <- info[t, "daysnorelapse"] + 1
+      # Make duplicate of previous time point so that we have time-fixed covariates
+      info[t, ] <- info[t-1, ]
+      
+      if (info[t-1, "relapse"] == 0) {
+        info[t, "daysnorelapse"] <- as.integer(info[t-1, "daysnorelapse"] + 1)
       } else {
-        info[t, "daysrelapse"] <- info[t, "daysrelapse"] + 1
+        info[t, "daysrelapse"] <- as.integer(info[t-1, "daysrelapse"] + 1)
       }
-      if (info[t, "platnorm"] == 0) {
-        info[t, "daysnoplatnorm"] <- info[t, "daysnoplatnorm"] + 1
+      if (info[t-1, "platnorm"] == 0) {
+        info[t, "daysnoplatnorm"] <- as.integer(info[t-1, "daysnoplatnorm"] + 1)
       } else {
-        info[t, "daysplatnorm"] <- info[t, "daysplatnorm"] + 1
+        info[t, "daysplatnorm"] <- as.integer(info[t-1, "daysplatnorm"] + 1)
       }
-      if (info[t, "gvhd"] == 0) {
-        info[t, "daysnogvhd"] <- info[t, "daysnogvhd"] + 1
+      if (info[t-1, "gvhd"] == 0) {
+        info[t, "daysnogvhd"] <- as.integer(info[t-1, "daysnogvhd"] + 1)
       } else {
-        info[t, "daysgvhd"] <- info[t, "daysgvhd"] + 1
+        info[t, "daysgvhd"] <- as.integer(info[t-1, "daysgvhd"] + 1)
       }
       
-      if (info[t, ]$platnormm1 == 1) {
-        info[t, ]$platnorm <- 1
+      if (info[t-1, "platnorm"] == 1) {
+        info[t, "platnorm"] <- 1L
       } else {
-        info_platnorm_0 <- info[t-1, ]
         info[t, "platnorm"] <- as.integer(rbinom(
           n = 1,
           size = 1,
-          prob = predict(mods$modA, newdata = info_platnorm_0, type = "response")
+          prob = predict(mods$modA, newdata = info[t-1, ], type = "response")
         ))
       }
       
-      if (info[t, ]$relapsem1 == 1) {
-        info[t, ]$relapse <- 1
+      if (info[t-1, "relapse"] == 1) {
+        info[t, "relapse"] <- 1L
       } else {
         info_relapse_0 <- info[t-1, ]
-        info_relapse_0$platnorm <- info[t, ]$platnorm
+        info_relapse_0$platnorm <- as.integer(info[t, "platnorm"])
         info[t, "relapse"] <- as.integer(rbinom(
           n = 1,
           size = 1,
@@ -169,12 +139,12 @@ simulate <- function(info, covariates, mods, type_intervention) {
         ))
       }
       
-      if (info[t, ]$gvhdm1 == 1) {
-        info[t, ]$gvhd <- 1
+      if (info[t-1, "gvhd"] == 1) {
+        info[t, "gvhd"] <- 1L
       } else {
         info_gvhd_0 <- info[t-1, ]
-        info_gvhd_0$platnorm <- info[t, ]$platnorm
-        info_gvhd_0$relapse <- info[t, ]$relapse
+        info_gvhd_0$platnorm <- as.integer(info[t, "platnorm"])
+        info_gvhd_0$relapse <- as.integer(info[t, "relapse"])
         if (type_intervention == "natural_course") {
           info[t, "gvhd"] <- as.integer(rbinom(
             n = 1,
@@ -182,58 +152,60 @@ simulate <- function(info, covariates, mods, type_intervention) {
             prob = predict(mods$modH, newdata = info_gvhd_0, type = "response")
           ))
         } else if (type_intervention == "always") {
-          # TODO
+          info[t, "gvhd"] <- 1L
         } else if (type_intervention == "never") {
-          # TODO
+          info[t, "gvhd"] <- 0L
         }
       }
       
       if (done == 0) {
         info_censlost_0 <- info[t-1, ]
-        info_censlost_0$platnorm <- info[t, ]$platnorm
-        info_censlost_0$relapse <- info[t, ]$relapse
-        info_censlost_0$gvhd <- info[t, ]$gvhd
+        info_censlost_0$platnorm <- as.integer(info[t, "platnorm"])
+        info_censlost_0$relapse <- as.integer(info[t, "relapse"])
+        info_censlost_0$gvhd <- as.integer(info[t, "gvhd"])
         info[t, "censlost"] <- as.integer(rbinom(
           n = 1,
           size = 1,
           prob = predict(mods$modD, newdata = info_censlost_0, type = "response")
         ))
-        done <- info[t, "censlost"]
+        if (type_intervention != "natural_course") {
+          info[t, "censlost"] <- 0L
+        }
+        done <- as.integer(info[t, "censlost"])
         
         if (done == 0) {
           info_d_0 <- info[t-1, ]
-          info_d_0$platnorm <- info[t, ]$platnorm
-          info_d_0$relapse <- info[t, ]$relapse
-          info_d_0$gvhd <- info[t, ]$gvhd
-          info_d_0$censlost <- info[t, ]$censlost
+          info_d_0$platnorm <- as.integer(info[t, "platnorm"])
+          info_d_0$relapse <- as.integer(info[t, "relapse"])
+          info_d_0$gvhd <- as.integer(info[t, "gvhd"])
+          info_d_0$censlost <- as.integer(info[t, "censlost"])
           info[t, "d"] <- as.integer(rbinom(
             n = 1,
             size = 1,
             prob = predict(mods$modE, newdata = info_d_0, type = "response")
           ))
-          done <- info[t, "d"]
+          done <- as.integer(info[t, "d"])
         } # End done death
-      } # End done censoring
-      
-      if (info[t, "day"] >= 1825) { done <- 1}
-      if (info[t, "gvhd"] == 1 & info[t, "gvhdm1"] == 0) { info[t, "tg"] <- info[t, ]$day}
-      if (info[t, "relapse"] == 1 & info[t, "relapsem1"] == 0) { info[t, "tr"] <- info[t, ]$day}
-      if (info[t, "platnorm"] == 1 & info[t, "platnormm1"] == 0) { info[t, "tp"] <- info[t, ]$day}
-      
-      if (done == 1) {
-        info[t, "td"] <- info[t, "day"]
-        if (info[t, "gvhd"] == 0) { info[t, "tg"] <- info[t, "day"] + 1}
-        if (info[t, "relapse"] == 0) { info[t, "tr"] <- info[t, "day"] + 1}
-        if (info[t, "platnorm"] == 0) { info[t, "tp"] <- info[t, "day"] + 1}
         
-        return(info)
-      }
+        if (t >= 1825) { done <- 1L }
+        if (info[t, "gvhd"] == 1 & info[t-1, "gvhd"] == 0) { info[t, "tg"] <- t }
+        if (info[t, "relapse"] == 1 & info[t-1, "relapse"] == 0) { info[t, "tr"] <- t }
+        if (info[t, "platnorm"] == 1 & info[t-1, "platnorm"] == 0) { info[t, "tp"] <- t }
+        
+        if (done == 1) {
+          info[t, "td"] <- t
+          if (info[t, "gvhd"] == 0) { info[t, "tg"] <- t+1 }
+          if (info[t, "relapse"] == 0) { info[t, "tr"] <- t+1 }
+          if (info[t, "platnorm"] == 0) { info[t, "tp"] <- t+1 }
+          
+          return(info)
+        }
+      } # End done censoring
     } # End set covariates
     
-    info[t, "relapsem1"] <- info[t, "relapse"]
-    info[t, "gvhdm1"] <- info[t, "gvhd"]
-    info[t, "platnormm1"] <- info[t, "platnorm"]
-    
+    info[t, "relapsem1"] <- as.integer(info[t, "relapse"])
+    info[t, "gvhdm1"] <- as.integer(info[t, "gvhd"])
+    info[t, "platnormm1"] <- as.integer(info[t, "platnorm"])
   } # End loop over time
   
   return(info)
